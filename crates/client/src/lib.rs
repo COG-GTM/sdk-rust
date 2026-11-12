@@ -1875,7 +1875,7 @@ where
         let namespace = self.namespace();
         let interceptor_output = interceptors::call_start_workflow(
             self.client_interceptors(),
-            StartWorkflowInput::new(workflow.name().to_owned(), input, options),
+            StartWorkflowInput::new(namespace.clone(), workflow.name().to_owned(), input, options),
             Next::new({
                 let client = (*self).clone();
                 move |input: StartWorkflowInput| -> BoxFuture<
@@ -1971,6 +1971,7 @@ where
         let interceptor_output = interceptors::call_signal_with_start_workflow(
             self.client_interceptors(),
             SignalWithStartWorkflowInput::new(
+                namespace.clone(),
                 workflow.name().to_owned(),
                 workflow_input,
                 signal.name().to_owned(),
@@ -2114,6 +2115,7 @@ where
         let output = interceptors::call_update_with_start_workflow(
             self.client_interceptors(),
             UpdateWithStartWorkflowInput::new(
+                self.namespace(),
                 workflow.name().to_owned(),
                 workflow_input,
                 update.name().to_owned(),
@@ -2135,6 +2137,7 @@ where
                             rpc_options,
                             workflow_args,
                             update_args,
+                            ..
                         } = input;
                         let (start_options, update_id, update_header) = options.into_parts();
 

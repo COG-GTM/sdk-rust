@@ -434,7 +434,6 @@ impl OpenTelemetryPluginBuilder {
                 .client_interceptors
                 .push(Arc::new(OpenTelemetryClientInterceptor {
                     config: client_config.clone(),
-                    namespace: options.namespace.as_str().into(),
                     header_converter: self
                         .encode_client_headers
                         .then(|| options.data_converter.clone()),
@@ -608,7 +607,6 @@ fn workflow_attributes(workflow_id: &str, run_id: Option<&str>) -> Vec<KeyValue>
 
 struct OpenTelemetryClientInterceptor {
     config: Arc<Config>,
-    namespace: Arc<str>,
     header_converter: Option<DataConverter>,
 }
 
@@ -659,7 +657,7 @@ macro_rules! client_operation {
             &parent,
             $name,
             SpanKind::Client,
-            &$self.namespace,
+            $input.namespace(),
             $attrs,
         );
         Box::pin(async move {
@@ -1322,7 +1320,6 @@ mod tests {
             );
             let interceptor = OpenTelemetryClientInterceptor {
                 config: Arc::new(OpenTelemetryPlugin::builder().config),
-                namespace: "default".into(),
                 header_converter: enabled.then_some(converter),
             };
             let mut header = Some(Header {
@@ -1360,7 +1357,6 @@ mod tests {
         for outcome in [Err("codec failed"), Ok(0), Ok(2)] {
             let interceptor = OpenTelemetryClientInterceptor {
                 config: Arc::new(OpenTelemetryPlugin::builder().config),
-                namespace: "default".into(),
                 header_converter: Some(DataConverter::new(
                     PayloadConverter::default(),
                     DefaultFailureConverter::default(),
