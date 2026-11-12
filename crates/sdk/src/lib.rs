@@ -1836,6 +1836,7 @@ impl ActivityHalf {
                     "otel.name" = format!("RunActivity:{}", start.activity_type),
                     "otel.kind" = "server",
                     "temporalActivityID" = start.activity_id,
+                    "temporalNamespace" = start.workflow_namespace,
                     "temporalWorkflowID" = field::Empty,
                     "temporalRunID" = field::Empty,
                 );

@@ -75,7 +75,8 @@ pub(crate) fn start_workflow(
     let span = info_span!(
         "RunWorkflow",
         "otel.name" = format!("RunWorkflow:{}", &init_workflow_job.workflow_type),
-        "otel.kind" = "server"
+        "otel.kind" = "server",
+        "temporalNamespace" = namespace,
     );
 
     let host = Rc::new(NativeWorkflowHost::default());

@@ -1,7 +1,7 @@
 use crate::common::{get_integ_server_options, get_integ_telem_options, integ_namespace};
 use futures_util::future::BoxFuture;
 use opentelemetry::{
-    Context,
+    Context, KeyValue,
     trace::{FutureExt as _, TraceContextExt, Tracer, TracerProvider as _},
 };
 use opentelemetry_sdk::trace::{
@@ -18,8 +18,8 @@ use std::{
     time::Duration,
 };
 use temporalio_client::{
-    Client, ClientInterceptor, ClientOptions, ClientPlugin, ConnectionOptions, NamespacedClient,
-    Next, PluginError, StartWorkflowInput, StartWorkflowOutput, WorkflowHistory,
+    Client, ClientInterceptor, ClientOptions, ClientPlugin, ConnectionOptions, ErasedClientPlugin,
+    NamespacedClient, Next, PluginError, StartWorkflowInput, StartWorkflowOutput, WorkflowHistory,
     WorkflowStartOptions, errors::WorkflowStartError,
 };
 use temporalio_common::{
@@ -482,8 +482,30 @@ async fn opentelemetry_plugin_connects_supported_spans_and_replays() {
             && span.parent_span_id == child_signal.span_context.span_id()
             && span.span_context.trace_id() == child_run.span_context.trace_id()
     }));
+    let namespace_attribute = KeyValue::new("temporalNamespace", integ_namespace());
     for span in &live_spans {
         assert!(span.span_context.is_valid());
+        if span.name != "ApplicationSpan" {
+            assert!(
+                span.attributes.contains(&namespace_attribute),
+                "{} is missing the temporalNamespace attribute",
+                span.name
+            );
+        }
+    }
+    for prefix in [
+        "StartWorkflow:",
+        "RunWorkflow:",
+        "StartActivity:",
+        "RunActivity:",
+        "StartChildWorkflow:",
+        "SignalWorkflow:",
+        "HandleSignal:",
+    ] {
+        assert!(
+            live_spans.iter().any(|span| span.name.starts_with(prefix)),
+            "missing {prefix} span"
+        );
     }
 
     let history = handle.fetch_history(Default::default());
@@ -503,6 +525,90 @@ async fn opentelemetry_plugin_connects_supported_spans_and_replays() {
     assert_eq!(
         exporter.get_finished_spans().unwrap().len(),
         live_spans.len()
+    );
+}
+
+struct NamespacePlugin(String);
+
+impl ClientPlugin for NamespacePlugin {
+    fn name(&self) -> &str {
+        "namespace-plugin"
+    }
+
+    fn configure_client_options(&self, options: &mut ClientOptions) -> Result<(), PluginError> {
+        options.namespace = self.0.clone();
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn opentelemetry_client_spans_use_current_namespace() {
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let plugin = OpenTelemetryPlugin::builder()
+        .tracer(provider.tracer("integration-test"))
+        .build();
+    let mut client = Client::connect(
+        get_integ_server_options(),
+        ClientOptions::new("namespace-before-plugins")
+            .plugin(plugin)
+            .plugin(ErasedClientPlugin::new(NamespacePlugin(integ_namespace())))
+            .build(),
+    )
+    .await
+    .unwrap();
+    let task_queue = format!("opentelemetry-namespace-{}", Uuid::new_v4());
+    let handle = client
+        .start_workflow(
+            OpenTelemetryReplayWorkflow::run,
+            (),
+            WorkflowStartOptions::new(
+                task_queue.clone(),
+                format!("opentelemetry-namespace-{}", Uuid::new_v4()),
+            )
+            .build(),
+        )
+        .await
+        .unwrap();
+    handle.terminate(Default::default()).await.unwrap();
+
+    let changed_namespace = format!("namespace-from-options-mut-{}", Uuid::new_v4());
+    client.options_mut().namespace = changed_namespace.clone();
+    client
+        .start_workflow(
+            OpenTelemetryReplayWorkflow::run,
+            (),
+            WorkflowStartOptions::new(
+                task_queue,
+                format!("opentelemetry-namespace-{}", Uuid::new_v4()),
+            )
+            .build(),
+        )
+        .await
+        .err()
+        .unwrap();
+
+    let spans = exporter.get_finished_spans().unwrap();
+    let span_namespaces: Vec<_> = spans
+        .iter()
+        .map(|span| {
+            let namespace = span
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key.as_str() == "temporalNamespace")
+                .map(|attribute| attribute.value.to_string());
+            (span.name.split(':').next().unwrap().to_owned(), namespace)
+        })
+        .collect();
+    assert_eq!(
+        span_namespaces,
+        [
+            ("StartWorkflow".to_owned(), Some(integ_namespace())),
+            ("TerminateWorkflow".to_owned(), Some(integ_namespace())),
+            ("StartWorkflow".to_owned(), Some(changed_namespace)),
+        ]
     );
 }
 

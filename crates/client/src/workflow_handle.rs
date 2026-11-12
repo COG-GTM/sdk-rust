@@ -768,6 +768,7 @@ where
         interceptors::call_signal_workflow(
             self.client.client_interceptors(),
             SignalWorkflowInput::new(
+                self.client.namespace(),
                 self.info.workflow_id.clone(),
                 self.info.run_id.clone().unwrap_or_default(),
                 signal.name().to_string(),
@@ -850,6 +851,7 @@ where
         let output = interceptors::call_query_workflow(
             self.client.client_interceptors(),
             QueryWorkflowInput::new(
+                self.client.namespace(),
                 self.info.workflow_id.clone(),
                 self.info.run_id.clone().unwrap_or_default(),
                 query.name().to_string(),
@@ -1004,6 +1006,7 @@ where
         let output = interceptors::call_start_workflow_update(
             self.client.client_interceptors(),
             StartWorkflowUpdateInput::new(
+                self.client.namespace(),
                 self.info().workflow_id.clone(),
                 self.info().run_id.clone().unwrap_or_default(),
                 update.name().to_string(),
@@ -1138,6 +1141,7 @@ where
         interceptors::call_cancel_workflow(
             self.client.client_interceptors(),
             CancelWorkflowInput {
+                namespace: self.client.namespace(),
                 workflow_id: self.info.workflow_id.clone(),
                 run_id: self.info.run_id.clone().unwrap_or_default(),
                 first_execution_run_id: self
@@ -1194,6 +1198,7 @@ where
         interceptors::call_terminate_workflow(
             self.client.client_interceptors(),
             TerminateWorkflowInput {
+                namespace: self.client.namespace(),
                 workflow_id: self.info.workflow_id.clone(),
                 run_id: self.info.run_id.clone().unwrap_or_default(),
                 first_execution_run_id: self
@@ -1256,6 +1261,7 @@ where
         let output = interceptors::call_describe_workflow(
             self.client.client_interceptors(),
             DescribeWorkflowInput {
+                namespace: self.client.namespace(),
                 workflow_id: self.info.workflow_id.clone(),
                 run_id: self.info.run_id.clone().unwrap_or_default(),
                 options: opts,

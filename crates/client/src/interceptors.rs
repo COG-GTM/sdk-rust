@@ -101,6 +101,31 @@ pub trait HasArgs {
         T: TemporalSerializable + Send + 'static;
 }
 
+macro_rules! impl_namespace {
+    ($($input:ty),+ $(,)?) => {
+        $(
+            impl $input {
+                /// Return the namespace the client sends this request to.
+                pub fn namespace(&self) -> &str {
+                    &self.namespace
+                }
+            }
+        )+
+    };
+}
+
+impl_namespace!(
+    StartWorkflowInput,
+    SignalWithStartWorkflowInput,
+    DescribeWorkflowInput,
+    SignalWorkflowInput,
+    QueryWorkflowInput,
+    StartWorkflowUpdateInput,
+    UpdateWithStartWorkflowInput,
+    CancelWorkflowInput,
+    TerminateWorkflowInput,
+);
+
 macro_rules! impl_with_args {
     ($input:ty) => {
         impl HasArgs for $input {
@@ -150,12 +175,18 @@ pub struct StartWorkflowInput {
     pub options: WorkflowStartOptions,
     /// Controls for the start RPC.
     pub rpc_options: crate::RpcOptions,
+    namespace: String,
     #[debug(skip)]
     args: Box<dyn TemporalClientValue>,
 }
 
 impl StartWorkflowInput {
-    pub(crate) fn new<T>(workflow_type: String, args: T, mut options: WorkflowStartOptions) -> Self
+    pub(crate) fn new<T>(
+        namespace: String,
+        workflow_type: String,
+        args: T,
+        mut options: WorkflowStartOptions,
+    ) -> Self
     where
         T: TemporalSerializable + Send + 'static,
     {
@@ -164,6 +195,7 @@ impl StartWorkflowInput {
             workflow_type,
             options,
             rpc_options,
+            namespace,
             args: Box::new(args),
         }
     }
@@ -199,6 +231,7 @@ pub struct SignalWithStartWorkflowInput {
     pub options: WorkflowStartOptions,
     /// Controls for the signal-with-start RPC.
     pub rpc_options: crate::RpcOptions,
+    namespace: String,
     // These remain type-erased until after interception so interceptors can replace either value
     // before the client's payload converter and codec run.
     #[debug(skip)]
@@ -209,6 +242,7 @@ pub struct SignalWithStartWorkflowInput {
 
 impl SignalWithStartWorkflowInput {
     pub(crate) fn new<W, S>(
+        namespace: String,
         workflow_type: String,
         workflow_args: W,
         signal_name: String,
@@ -225,6 +259,7 @@ impl SignalWithStartWorkflowInput {
             signal_name,
             options,
             rpc_options,
+            namespace,
             workflow_args: Box::new(workflow_args),
             signal_args: Box::new(signal_args),
         }
@@ -371,6 +406,7 @@ pub struct DescribeWorkflowInput {
     pub run_id: String,
     /// Describe options, including per-call RPC controls.
     pub options: WorkflowDescribeOptions,
+    pub(crate) namespace: String,
 }
 
 /// Result of an intercepted workflow describe.
@@ -432,12 +468,14 @@ pub struct SignalWorkflowInput {
     pub signal_name: String,
     /// Signal options, including per-call RPC controls.
     pub options: WorkflowSignalOptions,
+    namespace: String,
     #[debug(skip)]
     args: Box<dyn TemporalClientValue>,
 }
 
 impl SignalWorkflowInput {
     pub(crate) fn new<T>(
+        namespace: String,
         workflow_id: String,
         run_id: String,
         signal_name: String,
@@ -452,6 +490,7 @@ impl SignalWorkflowInput {
             run_id,
             signal_name,
             options,
+            namespace,
             args: Box::new(args),
         }
     }
@@ -489,12 +528,14 @@ pub struct QueryWorkflowInput {
     pub query_name: String,
     /// Query options, including per-call RPC controls.
     pub options: WorkflowQueryOptions,
+    namespace: String,
     #[debug(skip)]
     args: Box<dyn TemporalClientValue>,
 }
 
 impl QueryWorkflowInput {
     pub(crate) fn new<T>(
+        namespace: String,
         workflow_id: String,
         run_id: String,
         query_name: String,
@@ -509,6 +550,7 @@ impl QueryWorkflowInput {
             run_id,
             query_name,
             options,
+            namespace,
             args: Box::new(args),
         }
     }
@@ -560,12 +602,14 @@ pub struct StartWorkflowUpdateInput {
     pub update_name: String,
     /// Update options, including per-call RPC controls.
     pub options: WorkflowStartUpdateOptions,
+    namespace: String,
     #[debug(skip)]
     args: Box<dyn TemporalClientValue>,
 }
 
 impl StartWorkflowUpdateInput {
     pub(crate) fn new<T>(
+        namespace: String,
         workflow_id: String,
         run_id: String,
         update_name: String,
@@ -580,6 +624,7 @@ impl StartWorkflowUpdateInput {
             run_id,
             update_name,
             options,
+            namespace,
             args: Box::new(args),
         }
     }
@@ -647,6 +692,7 @@ pub struct UpdateWithStartWorkflowInput {
     pub options: WorkflowUpdateWithStartOptions,
     /// Controls for the multi-operation RPC.
     pub rpc_options: crate::RpcOptions,
+    pub(crate) namespace: String,
     #[debug(skip)]
     pub(crate) workflow_args: Box<dyn TemporalClientValue>,
     #[debug(skip)]
@@ -655,6 +701,7 @@ pub struct UpdateWithStartWorkflowInput {
 
 impl UpdateWithStartWorkflowInput {
     pub(crate) fn new<WA, UA>(
+        namespace: String,
         workflow_type: String,
         workflow_args: WA,
         update_name: String,
@@ -671,6 +718,7 @@ impl UpdateWithStartWorkflowInput {
             update_name,
             options,
             rpc_options,
+            namespace,
             workflow_args: Box::new(workflow_args),
             update_args: Box::new(update_args),
         }
@@ -783,6 +831,7 @@ pub struct CancelWorkflowInput {
     pub first_execution_run_id: String,
     /// Cancellation options, including per-call RPC controls.
     pub options: WorkflowCancelOptions,
+    pub(crate) namespace: String,
 }
 
 /// Input to [`ClientInterceptor::terminate_workflow`].
@@ -797,6 +846,7 @@ pub struct TerminateWorkflowInput {
     pub first_execution_run_id: String,
     /// Termination options, including per-call RPC controls.
     pub options: WorkflowTerminateOptions,
+    pub(crate) namespace: String,
 }
 
 /// Input to [`ClientInterceptor::create_schedule`].
