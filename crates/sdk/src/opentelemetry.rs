@@ -27,6 +27,9 @@
 //! - It traces Activity execution.
 //! - It traces Workflow calls to Activities, local Activities, child Workflows, and Signals.
 //!
+//! Each plugin span has a `temporalNamespace` attribute with the namespace of the client or worker
+//! that created it.
+//!
 //! The plugin also propagates context through Continue-as-New.
 //!
 //! Client tracing headers can opt into the configured client's codec with
@@ -121,6 +124,7 @@ const WORKFLOW_ID_ATTRIBUTE: &str = "temporalWorkflowID";
 const RUN_ID_ATTRIBUTE: &str = "temporalRunID";
 const ACTIVITY_ID_ATTRIBUTE: &str = "temporalActivityID";
 const UPDATE_ID_ATTRIBUTE: &str = "temporalUpdateID";
+const NAMESPACE_ATTRIBUTE: &str = "temporalNamespace";
 const WORKFLOW_ID_RANDOM_STREAM: &str = "temporalio-sdk/opentelemetry";
 
 #[derive(Clone)]
@@ -430,6 +434,7 @@ impl OpenTelemetryPluginBuilder {
                 .client_interceptors
                 .push(Arc::new(OpenTelemetryClientInterceptor {
                     config: client_config.clone(),
+                    namespace: options.namespace.as_str().into(),
                     header_converter: self
                         .encode_client_headers
                         .then(|| options.data_converter.clone()),
@@ -503,8 +508,10 @@ fn start_span(
     parent: &Context,
     name: String,
     kind: SpanKind,
-    attributes: Vec<KeyValue>,
+    namespace: &str,
+    mut attributes: Vec<KeyValue>,
 ) -> Context {
+    attributes.push(KeyValue::new(NAMESPACE_ATTRIBUTE, namespace.to_owned()));
     let builder = SpanBuilder::from_name(name)
         .with_kind(kind)
         .with_attributes(attributes);
@@ -555,7 +562,10 @@ fn start_workflow_span(
     if replaying {
         (replay_span_context(parent, &random), false)
     } else {
-        (start_span(config, parent, name, kind, attributes), true)
+        (
+            start_span(config, parent, name, kind, ctx.namespace(), attributes),
+            true,
+        )
     }
 }
 
@@ -598,6 +608,7 @@ fn workflow_attributes(workflow_id: &str, run_id: Option<&str>) -> Vec<KeyValue>
 
 struct OpenTelemetryClientInterceptor {
     config: Arc<Config>,
+    namespace: Arc<str>,
     header_converter: Option<DataConverter>,
 }
 
@@ -643,7 +654,14 @@ impl OpenTelemetryClientInterceptor {
 macro_rules! client_operation {
     ($self:ident, $input:ident, $next:ident, $name:expr, $attrs:expr, $context:ident, $headers:block) => {{
         let parent = Context::current();
-        let $context = start_span(&$self.config, &parent, $name, SpanKind::Client, $attrs);
+        let $context = start_span(
+            &$self.config,
+            &parent,
+            $name,
+            SpanKind::Client,
+            &$self.namespace,
+            $attrs,
+        );
         Box::pin(async move {
             let result = async {
                 $headers
@@ -873,6 +891,7 @@ impl ActivityInboundInterceptor for OpenTelemetryActivityInboundInterceptor {
             &parent,
             format!("RunActivity:{}", info.activity_type),
             SpanKind::Server,
+            &info.namespace,
             attributes,
         );
         Box::pin(async move {
@@ -1026,6 +1045,7 @@ impl WorkflowInterceptor for OpenTelemetryWorkflowInterceptor {
             &parent,
             format!("HandleQuery:{}", input.name()),
             SpanKind::Server,
+            ctx.namespace(),
             Vec::new(),
         );
         let result =
@@ -1060,6 +1080,7 @@ impl WorkflowInterceptor for OpenTelemetryWorkflowInterceptor {
             &parent,
             format!("ValidateUpdate:{}", input.name()),
             SpanKind::Server,
+            ctx.namespace(),
             vec![KeyValue::new(UPDATE_ID_ATTRIBUTE, input.id().to_owned())],
         );
         let result =
@@ -1301,6 +1322,7 @@ mod tests {
             );
             let interceptor = OpenTelemetryClientInterceptor {
                 config: Arc::new(OpenTelemetryPlugin::builder().config),
+                namespace: "default".into(),
                 header_converter: enabled.then_some(converter),
             };
             let mut header = Some(Header {
@@ -1338,6 +1360,7 @@ mod tests {
         for outcome in [Err("codec failed"), Ok(0), Ok(2)] {
             let interceptor = OpenTelemetryClientInterceptor {
                 config: Arc::new(OpenTelemetryPlugin::builder().config),
+                namespace: "default".into(),
                 header_converter: Some(DataConverter::new(
                     PayloadConverter::default(),
                     DefaultFailureConverter::default(),
@@ -1422,6 +1445,7 @@ mod tests {
             &Context::new(),
             "StartWorkflow:Example".to_owned(),
             SpanKind::Client,
+            "my-namespace",
             workflow_attributes("workflow-id", None),
         );
 
@@ -1435,6 +1459,11 @@ mod tests {
             spans[0]
                 .attributes
                 .contains(&KeyValue::new(WORKFLOW_ID_ATTRIBUTE, "workflow-id"))
+        );
+        assert!(
+            spans[0]
+                .attributes
+                .contains(&KeyValue::new(NAMESPACE_ATTRIBUTE, "my-namespace"))
         );
     }
 

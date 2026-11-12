@@ -1,7 +1,7 @@
 use crate::common::{get_integ_server_options, get_integ_telem_options, integ_namespace};
 use futures_util::future::BoxFuture;
 use opentelemetry::{
-    Context,
+    Context, KeyValue,
     trace::{FutureExt as _, TraceContextExt, Tracer, TracerProvider as _},
 };
 use opentelemetry_sdk::trace::{
@@ -482,8 +482,30 @@ async fn opentelemetry_plugin_connects_supported_spans_and_replays() {
             && span.parent_span_id == child_signal.span_context.span_id()
             && span.span_context.trace_id() == child_run.span_context.trace_id()
     }));
+    let namespace_attribute = KeyValue::new("temporalNamespace", integ_namespace());
     for span in &live_spans {
         assert!(span.span_context.is_valid());
+        if span.name != "ApplicationSpan" {
+            assert!(
+                span.attributes.contains(&namespace_attribute),
+                "{} is missing the temporalNamespace attribute",
+                span.name
+            );
+        }
+    }
+    for prefix in [
+        "StartWorkflow:",
+        "RunWorkflow:",
+        "StartActivity:",
+        "RunActivity:",
+        "StartChildWorkflow:",
+        "SignalWorkflow:",
+        "HandleSignal:",
+    ] {
+        assert!(
+            live_spans.iter().any(|span| span.name.starts_with(prefix)),
+            "missing {prefix} span"
+        );
     }
 
     let history = handle.fetch_history(Default::default());
